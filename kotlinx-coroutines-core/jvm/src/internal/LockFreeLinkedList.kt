@@ -611,10 +611,20 @@ public actual open class LockFreeLinkedListNode {
         }
     }
 
+    internal fun nextValue(): Any = _next.value
+
     internal fun validateNode(prev: Node, next: Node) {
-        assert { prev === this._prev.value }
-        assert { next === this._next.value }
+        val result = validateNodeResult(prev, next)
+        check(result.isEmpty()) { result }
     }
+
+    internal fun validateNodeResult(prev: Node, next: Node): String = buildString {
+        append(validateSameResult("prev", prev, _prev.value))
+        append(validateSameResult("next", next, _next.value))
+    }
+
+    private fun validateSameResult(name: String, expect: Node, actual: Any): String =
+        if (expect === actual) "" else "{$name: expect=$expect, actual=$actual}"
 
     override fun toString(): String = "${this::class.java.simpleName}@${Integer.toHexString(System.identityHashCode(this))}"
 }
@@ -652,15 +662,48 @@ public actual open class LockFreeLinkedListHead : LockFreeLinkedListNode() {
     override val isRemoved: Boolean get() = false
     override fun nextIfRemoved(): Node? = null
 
+    // ================ for debugging and tests ================
+
     internal fun validate() {
-        var prev: Node = this
-        var cur: Node = next as Node
-        while (cur != this) {
-            val next = cur.nextNode
+        val start = this
+        var prev: Node = start
+        var cur: Node = nextValue() as Node
+        while (cur !== start) {
+            val next = cur.nextValue() as Node
             cur.validateNode(prev, next)
             prev = cur
             cur = next
         }
         validateNode(prev, next as Node)
+    }
+
+    private fun Node.expectNextNode(sb: StringBuilder): Node? {
+        val next = nextValue()
+        if (next is Node) return next
+        sb.append(next)
+        if (next is Removed) {
+            sb.append(" ")
+            return next.ref
+        }
+        sb.append("!!]")
+        return null
+    }
+
+    internal fun stateRepresentation(): String = buildString {
+        append("[")
+        val start = this@LockFreeLinkedListHead
+        var prev: Node = start
+        var cur: Node = expectNextNode(this) ?: return@buildString
+        while (cur !== start) {
+            val next = cur.expectNextNode(this) ?: return@buildString
+            append(cur)
+            append(cur.validateNodeResult(prev, next))
+            append(", ")
+            prev = cur
+            cur = next
+        }
+        append(start)
+        append(validateNodeResult(prev, next as Node))
+        append("]")
     }
 }
